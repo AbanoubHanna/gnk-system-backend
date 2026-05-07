@@ -4,7 +4,7 @@ on:
     branches:
       - main
     paths:
-      - 'backend/**' 
+      - 'gnk-system/backend/**' 
 
 jobs:
   deploy:
@@ -18,7 +18,7 @@ jobs:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          local-dir: backend/
+          local-dir: gnk-system/backend/
           server-dir: gnk-backend/
           exclude: |
             **/node_modules/**
