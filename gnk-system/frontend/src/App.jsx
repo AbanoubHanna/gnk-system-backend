@@ -14,7 +14,7 @@ function App() {
     isAdmin: true
   });
   
-  const [activeTab, setActiveTab] = useState('payment');
+  const [activeTab, setActiveTab] = useState('Dashboard');
 
   return (
     <>
