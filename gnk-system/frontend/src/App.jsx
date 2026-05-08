@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import Login from './components/Login';
 import PaymentForm from './components/PaymentForm';
 import ReceivingForm from './components/ReceivingForm';
 import Dashboard from './components/Dashboard';
@@ -6,21 +7,35 @@ import ManagerView from './components/ManagerView';
 import AccountantView from './components/AccountantView';
 
 function App() {
-  const [user] = useState({
-    email: 'Treasury@gnk.group',
-    employeeName: 'Treasury',
-    isManager: true,
-    isAccountant: true,
-    isAdmin: true
-  });
+  // 1. حالة المستخدم: لو null يعني لسه معملش تسجيل دخول
+  const [user, setUser] = useState(null);
   
-  // 1. خلينا الـ dashboard حروف سمول عشان تفتح صح
+  // 2. التاب الحالي والتابات المحملة (لتسريع التنقل زي ما عملنا)
   const [activeTab, setActiveTab] = useState('dashboard');
-  
-  // 2. المتغير السحري: ده بيسجل التابات اللي اليوزر داس عليها بس
   const [loadedTabs, setLoadedTabs] = useState(['dashboard']);
 
-  // 3. دالة جديدة: لما بتدوس على تاب، بتشغله، وبتضيفه لقائمة "المحملين"
+  // 3. التحقق هل اليوزر مسجل دخول قبل كده ولا لأ (عشان ميطلبش الكود كل شوية)
+  useEffect(() => {
+    const savedUser = sessionStorage.getItem('gnk_user');
+    if (savedUser) {
+      setUser(JSON.parse(savedUser));
+    }
+  }, []);
+
+  // 4. دالة نجاح الدخول (بتستلم الداتا من شاشة اللوجين)
+  const handleLoginSuccess = (userData) => {
+    sessionStorage.setItem('gnk_user', JSON.stringify(userData));
+    setUser(userData);
+  };
+
+  // 5. دالة تسجيل الخروج
+  const handleLogout = () => {
+    sessionStorage.removeItem('gnk_user');
+    setUser(null);
+    setLoadedTabs(['dashboard']);
+    setActiveTab('dashboard');
+  };
+
   const handleTabClick = (tabName) => {
     setActiveTab(tabName);
     if (!loadedTabs.includes(tabName)) {
@@ -28,6 +43,12 @@ function App() {
     }
   };
 
+  // 6. لو مفيش يوزر، اعرض شاشة الدخول (Login) فوراً وامنع فتح الموقع
+  if (!user) {
+    return <Login onLoginSuccess={handleLoginSuccess} />;
+  }
+
+  // 7. لو فيه يوزر، افتحله الموقع بناءً على صلاحياته
   return (
     <>
       <div className="topbar">
@@ -36,7 +57,7 @@ function App() {
         <span className="topbar-title">Operations System</span>
         <div className="topbar-user">
           <span className="topbar-email">{user.email}</span>
-          <span style={{fontSize: '10px', background: '#22c55e', color: '#fff', padding: '2px 6px', borderRadius: '4px'}}>DEV MODE</span>
+          <button onClick={handleLogout} style={{background:'none', border:'1px solid #cbd5e1', color:'#f8fafc', padding:'4px 10px', borderRadius:'6px', cursor:'pointer', fontSize:'11px'}}>Logout</button>
         </div>
       </div>
 
@@ -50,7 +71,6 @@ function App() {
       </div>
 
       <div className="page">
-        {/* بنسأل سؤالين: هل هو محاسب؟ + هل هو داس على التاب ده قبل كده؟ */}
         {user.isAccountant && loadedTabs.includes('accountant') && (
           <div style={{ display: activeTab === 'accountant' ? 'block' : 'none' }}>
             <AccountantView user={user} />
