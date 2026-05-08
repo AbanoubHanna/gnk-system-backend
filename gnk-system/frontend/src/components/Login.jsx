@@ -16,7 +16,8 @@ export default function Login({ onLoginSuccess }) {
     }
     setLoading(true);
     try {
-      const res = await api.post('/auth/send-otp', { email });
+      // ضفنا trim و toLowerCase عشان لو الموظف كتب مسافة بالغلط
+      const res = await api.post('/auth/send-otp', { email: email.trim().toLowerCase() });
       if (res.data.success) {
         setStep(2);
       } else {
@@ -36,9 +37,10 @@ export default function Login({ onLoginSuccess }) {
     }
     setLoading(true);
     try {
-      const res = await api.post('/auth/verify-otp', { email, code: otp });
+      const res = await api.post('/auth/verify-otp', { email: email.trim().toLowerCase(), code: otp });
       if (res.data.success) {
-        onLoginSuccess(res.data.user);
+        // التعديل هنا: بنبعت الداتا كلها مش res.data.user
+        onLoginSuccess(res.data);
       } else {
         setError(res.data.error || 'Invalid code');
       }
@@ -87,7 +89,7 @@ export default function Login({ onLoginSuccess }) {
             <h2 style={{ fontSize: '20px', color: '#1e293b', marginBottom: '8px' }}>🔐 Enter Code</h2>
             <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '24px' }}>
               We sent a 6-digit code to <strong>{email}</strong><br/>
-              <span style={{ fontSize: '11px', color: '#2563eb' }}>(Check your backend terminal for the code)</span>
+              <span style={{ fontSize: '11px', color: '#2563eb' }}>(Check your email inbox or spam)</span>
             </p>
             
             <input 
