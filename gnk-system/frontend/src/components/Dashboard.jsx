@@ -1,188 +1,151 @@
-import { useState, useEffect, useMemo } from 'react';
-import api from '../api';
+import React, { useState, useEffect } from 'react';
+import { runGoogleScript } from '../api';
 
-export default function Dashboard({ user }) {
-  const [data, setData] = useState({ payments: [], receivings: [], financials: {} });
+function Dashboard({ user }) {
+  const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [error, setError] = useState('');
+  const [filterQuery, setFilterQuery] = useState('');
 
   useEffect(() => {
-    fetchDashboardData();
+    if (user?.email) {
+      loadDashboardData();
+    }
   }, [user]);
 
-  const fetchDashboardData = async () => {
+  const loadDashboardData = async () => {
     setLoading(true);
+    setError('');
     try {
-      // بنجيب داتا الموظف اللي فاتح السيستم بس
-      const res = await api.get(`/payments/dashboard?email=${user.email}`);
-      if (res.data.success) {
-        setData({
-          payments: res.data.payments || [],
-          receivings: res.data.receivings || [],
-          financials: res.data.financials || {}
-        });
+      const res = await runGoogleScript('getDashboardData', user.email);
+      if (res && res.success) {
+        setData(res);
+      } else {
+        setError(res ? res.error : "Error loading dashboard");
       }
     } catch (err) {
-      console.error('Error fetching dashboard:', err);
+      setError("Connection error");
     }
     setLoading(false);
   };
 
-  // فلترة الجداول
-  const filteredPayments = useMemo(() => {
-    return data.payments.filter(p => 
-      !searchQuery || (p.requestId + p.project + p.status).toLowerCase().includes(searchQuery.toLowerCase())
-    );
-  }, [data.payments, searchQuery]);
-
-  const filteredReceivings = useMemo(() => {
-    return data.receivings.filter(r => 
-      !searchQuery || (r.rec_number + r.project + r.supplier).toLowerCase().includes(searchQuery.toLowerCase())
-    );
-  }, [data.receivings, searchQuery]);
-
   if (loading) {
-    return <div className="card" style={{textAlign:'center', padding:'50px'}}>⏳ Loading your dashboard...</div>;
+    return (
+      <div className="card" style={{ textAlign: 'center', padding: '40px' }}>
+        <div style={{ fontSize: '32px', marginBottom: '10px' }}>⏳</div>
+        <p style={{ color: 'var(--ink3)', fontSize: '14px' }}>Loading your dashboard…</p>
+      </div>
+    );
   }
 
-  const { financials } = data;
+  if (error) {
+    return (
+      <div className="card" style={{ textAlign: 'center', padding: '40px' }}>
+        <p style={{ color: 'var(--red)' }}>⚠️ {error}</p>
+        <button className="btn-new" onClick={loadDashboardData}>Try Again</button>
+      </div>
+    );
+  }
+
+  const f = data?.financials || {};
+  const payments = (data?.payments || []).filter(p => 
+    !filterQuery || p.email.includes(filterQuery.toLowerCase()) || p.requestedBy.toLowerCase().includes(filterQuery.toLowerCase())
+  );
+  const receivings = (data?.receivings || []).filter(r => 
+    !filterQuery || r.email.includes(filterQuery.toLowerCase()) || r.employeeName.toLowerCase().includes(filterQuery.toLowerCase())
+  );
 
   return (
-    <div id="dashboardView" style={{ paddingBottom: '40px', fontFamily: '"Segoe UI", Tahoma, Geneva, Verdana, sans-serif' }}>
-      
-      {/* رأس الداشبورد */}
-      <div style={{ background: '#fff', borderRadius: '8px', padding: '20px', marginBottom: '20px', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <h2 style={{ margin: '0 0 5px 0', color: '#1e293b', fontSize: '20px' }}>👋 Welcome, {user.employeeName || user.email.split('@')[0]}</h2>
-          <p style={{ margin: 0, color: '#64748b', fontSize: '13px' }}>Here is the summary of all your operational requests.</p>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <span style={{ fontSize: '12px', fontWeight: '700', color: '#64748b' }}>🔍 SEARCH:</span>
-          <input 
-            type="text" 
-            placeholder="Search ID, project..." 
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            style={{ padding: '8px 14px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '13px', outline: 'none', width: '200px' }}
-          />
-          <button onClick={fetchDashboardData} style={{ padding: '8px 12px', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '6px', cursor: 'pointer' }}>🔄</button>
-        </div>
-      </div>
-
-      {/* كروت الملخص المالي */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px', marginBottom: '24px' }}>
-        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderTop: '3px solid #64748b', borderRadius: '8px', padding: '16px', textAlign: 'center' }}>
-          <div style={{ fontSize: '22px', fontWeight: '700', color: '#475569' }}>{financials.total || 0}</div>
-          <div style={{ fontSize: '10px', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', letterSpacing: '1px' }}>Total Requests</div>
-        </div>
-        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderTop: '3px solid #d97706', borderRadius: '8px', padding: '16px', textAlign: 'center' }}>
-          <div style={{ fontSize: '22px', fontWeight: '700', color: '#b45309' }}>{financials.pendingApproval || 0}</div>
-          <div style={{ fontSize: '10px', fontWeight: '700', color: '#b45309', textTransform: 'uppercase', letterSpacing: '1px' }}>Pending</div>
-        </div>
-        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderTop: '3px solid #16a34a', borderRadius: '8px', padding: '16px', textAlign: 'center' }}>
-          <div style={{ fontSize: '22px', fontWeight: '700', color: '#16a34a' }}>{financials.approved || 0}</div>
-          <div style={{ fontSize: '10px', fontWeight: '700', color: '#16a34a', textTransform: 'uppercase', letterSpacing: '1px' }}>Approved</div>
-        </div>
-        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderTop: '3px solid #dc2626', borderRadius: '8px', padding: '16px', textAlign: 'center' }}>
-          <div style={{ fontSize: '22px', fontWeight: '700', color: '#dc2626' }}>{financials.rejected || 0}</div>
-          <div style={{ fontSize: '10px', fontWeight: '700', color: '#dc2626', textTransform: 'uppercase', letterSpacing: '1px' }}>Rejected</div>
-        </div>
-      </div>
-
-      {/* 1. جدول طلبات الدفع الخاصة بالموظف */}
-      <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '24px', overflow: 'hidden' }}>
-        <div style={{ padding: '16px 20px', borderBottom: '1px solid #e2e8f0', fontSize: '12px', fontWeight: '700', color: '#64748b', letterSpacing: '1px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span>💳 MY PAYMENT REQUESTS</span>
-        </div>
-        <div style={{ overflowX: 'auto', padding: '0 20px 20px 20px', marginTop: '16px' }}>
-          <div className="gnk-table-wrap">
-            <table className="gnk-table">
-              <thead style={{ background: '#0f172a' }}>
-                <tr>
-                  <th style={{ padding: '12px', color: '#fff', fontSize: '10px', textAlign: 'left' }}>ID</th>
-                  <th style={{ padding: '12px', color: '#fff', fontSize: '10px', textAlign: 'left' }}>PROJECT</th>
-                  <th style={{ padding: '12px', color: '#fff', fontSize: '10px', textAlign: 'left' }}>AMOUNT</th>
-                  <th style={{ padding: '12px', color: '#fff', fontSize: '10px', textAlign: 'left' }}>STATUS</th>
-                  <th style={{ padding: '12px', color: '#fff', fontSize: '10px', textAlign: 'left' }}>DUE DATE</th>
-                  <th style={{ padding: '12px', color: '#fff', fontSize: '10px', textAlign: 'center' }}>PDF</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredPayments.length === 0 ? (
-                  <tr><td colSpan="6" style={{textAlign:'center', padding:'20px', color:'#64748b'}}>No requests found.</td></tr>
-                ) : (
-                  filteredPayments.map((p) => (
-                    <tr key={p.requestId} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '12px', fontWeight: '700', color: '#2563eb' }}>{p.requestId}</td>
-                      <td style={{ padding: '12px', fontWeight: '500', color: '#334155' }}>{p.project}</td>
-                      <td style={{ padding: '12px', fontFamily: 'monospace', fontWeight: '700', color: '#1e293b' }}>
-                        {parseFloat(p.amount).toLocaleString()} {p.currency}
-                      </td>
-                      <td style={{ padding: '12px' }}>
-                        <span className={`badge-pill ${p.status === 'Approved' ? 'approved' : p.status === 'Rejected' ? 'rejected' : p.status === 'Closed' ? 'closed' : 'pending'}`}>
-                          {p.status || 'Pending'}
-                        </span>
-                      </td>
-                      <td style={{ padding: '12px', color: '#64748b' }}>{new Date(p.dueDate).toLocaleDateString('en-GB')}</td>
-                      <td style={{ padding: '12px', textAlign: 'center' }}>
-                        {p.pdfUrl ? (
-                          <a href={`http://localhost:5000${p.pdfUrl}`} target="_blank" rel="noreferrer" style={{ color: '#2563eb', fontWeight: '700', textDecoration: 'none', fontSize: '12px' }}>📄 View</a>
-                        ) : <span style={{ color: '#cbd5e1' }}>—</span>}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+    <div>
+      {data?.isAdmin && (
+        <div className="card" style={{ padding: '14px', marginBottom: '14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--ink2)', letterSpacing: '1px' }}>🔍 FILTER BY EMPLOYEE:</span>
+            <input 
+              type="text" 
+              placeholder="Email or name…" 
+              value={filterQuery}
+              onChange={(e) => setFilterQuery(e.target.value)}
+              style={{ flex: 1, minWidth: '200px', padding: '8px 12px', border: '1.5px solid var(--border)', borderRadius: '8px', outline: 'none' }}
+            />
+            <button onClick={() => setFilterQuery('')} style={{ padding: '8px 14px', border: '1.5px solid var(--border)', borderRadius: '8px', background: '#fff', cursor: 'pointer' }}>Show All</button>
           </div>
         </div>
+      )}
+
+      {/* Summary Cards */}
+      <div style={{ background: '#ffffff', width: '100%', padding: '24px 0', borderRadius: '12px', marginBottom: '14px' }}>
+        <h2 style={{ fontSize: '18px', color: '#334155', margin: '0 0 20px 20px', fontWeight: 500 }}>FINANCIAL SUMMARY</h2>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px', padding: '0 20px' }}>
+          {[
+            { label: "TOTAL", val: f.total, sub: "Requests", color: "#475569", border: "#94a3b8" },
+            { label: "PENDING", val: f.pendingApproval, sub: (f.pendingVal || 0).toFixed(0) + " LE", color: "#b45309", border: "#f59e0b" },
+            { label: "APPROVED", val: f.approved, sub: (f.approvedVal || 0).toFixed(0) + " LE", color: "#1d4ed8", border: "#3b82f6" },
+            { label: "CLOSED", val: f.closed, sub: (f.closedVal || 0).toFixed(0) + " LE", color: "#15803d", border: "#22c55e" },
+            { label: "PAID", val: (f.paidTotal || 0).toFixed(0), sub: "LE Total", color: "#059669", border: "#10b981" }
+          ].map((c, i) => (
+            <div key={i} style={{ border: '1px solid #f1f5f9', borderTop: `4px solid ${c.border}`, borderRadius: '12px', padding: '24px 8px', textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+              <div style={{ fontSize: '32px', color: c.color, marginBottom: '8px', lineHeight: 1 }}>{c.val}</div>
+              <div style={{ fontSize: '10px', fontWeight: 600, color: '#64748b', letterSpacing: '1px' }}>{c.label}</div>
+              <div style={{ fontSize: '12px', color: c.color, opacity: 0.8 }}>{c.sub}</div>
+            </div>
+          ))}
+        </div>
       </div>
 
-      {/* 2. جدول سندات الاستلام الخاصة بالموظف */}
-      <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
-        <div style={{ padding: '16px 20px', borderBottom: '1px solid #e2e8f0', fontSize: '12px', fontWeight: '700', color: '#64748b', letterSpacing: '1px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span>📦 MY RECEIVING VOUCHERS</span>
-        </div>
-        <div style={{ overflowX: 'auto', padding: '0 20px 20px 20px', marginTop: '16px' }}>
-          <div className="gnk-table-wrap">
-            <table className="gnk-table">
-              <thead style={{ background: '#0f172a' }}>
-                <tr>
-                  <th style={{ padding: '12px', color: '#fff', fontSize: '10px', textAlign: 'left' }}>REC NUMBER</th>
-                  <th style={{ padding: '12px', color: '#fff', fontSize: '10px', textAlign: 'left' }}>DATE</th>
-                  <th style={{ padding: '12px', color: '#fff', fontSize: '10px', textAlign: 'left' }}>SUPPLIER</th>
-                  <th style={{ padding: '12px', color: '#fff', fontSize: '10px', textAlign: 'left' }}>PROJECT</th>
-                  <th style={{ padding: '12px', color: '#fff', fontSize: '10px', textAlign: 'left' }}>TOTAL</th>
-                  <th style={{ padding: '12px', color: '#fff', fontSize: '10px', textAlign: 'center' }}>PDF</th>
-                </tr>
+      <div className="card">
+        <div className="card-title">💳 Payment Requests</div>
+        <div className="tbl-wrap">
+          {payments.length === 0 ? <div className="link-empty">No payment requests found.</div> : (
+            <table>
+              <thead>
+                <tr><th>ID</th><th>DATE</th><th>PROJECT</th><th>AMOUNT</th><th>STATUS</th><th>DUE</th><th>PDF</th></tr>
               </thead>
               <tbody>
-                {filteredReceivings.length === 0 ? (
-                  <tr><td colSpan="6" style={{textAlign:'center', padding:'20px', color:'#64748b'}}>No vouchers found.</td></tr>
-                ) : (
-                  filteredReceivings.map((r) => (
-                    <tr key={r.rec_number} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '12px', fontWeight: '700', color: '#7c3aed' }}>{r.rec_number}</td>
-                      <td style={{ padding: '12px', color: '#64748b' }}>{new Date(r.timestamp).toLocaleDateString('en-GB')}</td>
-                      <td style={{ padding: '12px', color: '#334155' }}>{r.supplier}</td>
-                      <td style={{ padding: '12px', color: '#475569' }}>{r.project}</td>
-                      <td style={{ padding: '12px', fontFamily: 'monospace', fontWeight: '700', color: '#16a34a' }}>
-                        {parseFloat(r.total_amount).toLocaleString()} L.E
-                      </td>
-                      <td style={{ padding: '12px', textAlign: 'center' }}>
-                        {r.pdf_link ? (
-                          <a href={`http://localhost:5000${r.pdf_link}`} target="_blank" rel="noreferrer" style={{ color: '#7c3aed', fontWeight: '700', textDecoration: 'none', fontSize: '12px' }}>📄 View</a>
-                        ) : <span style={{ color: '#cbd5e1' }}>—</span>}
-                      </td>
-                    </tr>
-                  ))
-                )}
+                {payments.map((p, i) => (
+                  <tr key={i}>
+                    <td style={{ fontWeight: 600, color: '#2563eb' }}>{p.requestId}</td>
+                    <td>{p.date}</td>
+                    <td>{p.project}</td>
+                    <td style={{ fontFamily: 'monospace', fontWeight: 600 }}>{p.amount.toFixed(2)} {p.currency}</td>
+                    <td><span style={{ padding: '3px 10px', borderRadius: '20px', fontSize: '11px', background: '#f1f5f9' }}>{p.status}</span></td>
+                    <td>{p.dueDate}</td>
+                    <td>{p.pdfUrl ? <a href={p.pdfUrl} target="_blank" rel="noreferrer">📄 View</a> : "—"}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
-          </div>
+          )}
         </div>
       </div>
 
+      <div className="card">
+        <div className="card-title">📦 Receiving Vouchers</div>
+        <div className="tbl-wrap">
+          {receivings.length === 0 ? <div className="link-empty">No receiving vouchers found.</div> : (
+            <table>
+              <thead>
+                <tr><th>REC#</th><th>DATE</th><th>SUPPLIER</th><th>PROJECT</th><th>TYPE</th><th>TOTAL</th><th>PDF</th></tr>
+              </thead>
+              <tbody>
+                {receivings.map((r, i) => (
+                  <tr key={i}>
+                    <td style={{ fontWeight: 600, color: '#7c3aed' }}>{r.recNumber}</td>
+                    <td>{r.date}</td>
+                    <td>{r.supplier}</td>
+                    <td>{r.project}</td>
+                    <td>{r.type}</td>
+                    <td style={{ fontFamily: 'monospace', fontWeight: 600, color: '#16a34a' }}>{r.totalAmount.toFixed(2)}</td>
+                    <td>{r.pdfUrl ? <a href={r.pdfUrl} target="_blank" rel="noreferrer">📄 View</a> : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
+
+export default Dashboard;
