@@ -37,15 +37,26 @@ function App() {
         <button className={`tab-btn ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')}>📊 My Dashboard</button>
       </div>
 
-      <div className="page">
-        {activeTab === 'payment' && <PaymentForm user={user} />}
-        {activeTab === 'receiving' && <ReceivingForm user={user} />}
-        {activeTab === 'dashboard' && <Dashboard user={user} />}
-        {activeTab === 'manager' && <ManagerView user={user} />}
-        {activeTab === 'accountant' && <AccountantView user={user} />}
+ <div className="page">
+        {user.isAccountant && (
+          <div style={{ display: activeTab === 'accountant' ? 'block' : 'none' }}>
+            <AccountantView user={user} />
+          </div>
+        )}
+        {user.isManager && (
+          <div style={{ display: activeTab === 'manager' ? 'block' : 'none' }}>
+            <ManagerView user={user} />
+          </div>
+        )}
+        <div style={{ display: activeTab === 'payment' ? 'block' : 'none' }}>
+          <PaymentForm user={user} />
+        </div>
+        <div style={{ display: activeTab === 'receiving' ? 'block' : 'none' }}>
+          <ReceivingForm user={user} />
+        </div>
+        <div style={{ display: activeTab === 'dashboard' ? 'block' : 'none' }}>
+          <Dashboard user={user} />
+        </div>
       </div>
-    </>
-  );
-}
 
 export default App;
