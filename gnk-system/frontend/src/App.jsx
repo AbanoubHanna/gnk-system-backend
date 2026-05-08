@@ -7,8 +7,8 @@ import AccountantView from './components/AccountantView'; // ⛔ خليه كوم
 
 function App() {
   const [user] = useState({
-    email: 'kareem@gnk.group',
-    employeeName: 'Kareem (Admin)',
+    email: 'Treasury@gnk.group',
+    employeeName: 'Treasury',
     isManager: true,
     isAccountant: true,
     isAdmin: true
