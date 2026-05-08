@@ -1,173 +1,207 @@
+// backend/utils/systemEngine.js
 const puppeteer = require('puppeteer');
 const nodemailer = require('nodemailer');
 const path = require('path');
 const fs = require('fs');
 
-// إعدادات الإيميل (استخدم إيميلك وباسورد الـ App Passwords)
+// إعدادات الإيميل
 const transporter = nodemailer.createTransport({
-  service: 'gmail', 
+  service: 'gmail',
   auth: {
     user: process.env.EMAIL_USER || 'your-email@gnk.group',
     pass: process.env.EMAIL_PASS || 'your-app-password'
   }
 });
 
-// دالة إرسال الإيميل
 async function sendEmailGNK(toEmail, subject, htmlBody) {
   try {
+    if (!toEmail || !toEmail.includes('@')) return false;
     await transporter.sendMail({
-      from: '"GNK OPERATIONS" <your-email@gnk.group>',
+      from: '"GNK OPERATIONS" <' + (process.env.EMAIL_USER || 'system@gnk.group') + '>',
       to: toEmail,
       subject: subject,
       html: htmlBody
     });
     console.log(`✅ Email sent to: ${toEmail}`);
+    return true;
   } catch (error) {
     console.error(`❌ Failed to send email to ${toEmail}:`, error);
+    return false;
   }
 }
 
-// دالة توليد الـ PDF لطلبات الدفع
+function escapeHtml(s) {
+  return (s || "").toString()
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function frow(label, value) {
+  if (!value) return "";
+  return "<div style='display:flex;margin-bottom:6px'>" +
+    "<span style='width:148px;flex-shrink:0;font-size:10.5px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.4px'>" + label + "</span>" +
+    "<span style='font-size:12px;color:#111'>" + value + "</span></div>";
+}
+
+function appr(label, stamp, pending) {
+  const isAppr = stamp && stamp.includes("APPROVED");
+  const isRej  = stamp && stamp.includes("REJECTED");
+  const color  = isAppr ? "#16a34a" : (isRej ? "#dc2626" : "#9ca3af");
+  const bg     = isAppr ? "#f0fdf4" : (isRej ? "#fef2f2" : "#f9fafb");
+  const text   = stamp ? stamp : (pending ? "⏳ Pending…" : "—");
+  return "<div style='margin-bottom:8px;padding:8px 12px;border-left:3px solid " + color + ";background:" + bg + "'>" +
+    "<div style='font-size:9.5px;font-weight:700;text-transform:uppercase;color:#6b7280;margin-bottom:2px'>" + label + "</div>" +
+    "<div style='font-size:11.5px;color:" + color + ";font-weight:600'>" + text + "</div></div>";
+}
+
+// توليد PDF لطلبات الدفع بنفس تصميم جوجل
 async function generatePaymentPDF(data) {
   try {
+    const amount = parseFloat(data.amount) || 0;
+    const currency = data.currency || "L.E";
+    const submitDate = new Date().toLocaleDateString('en-GB');
+    const genDate = new Date().toLocaleString('en-GB');
+    
+    let payBlock = "";
+    if (data.payment_method) {
+      payBlock =
+        "<div style='height:1px;background:#e5e7eb;margin:14px 0'></div>" +
+        "<div style='font-size:9.5px;font-weight:700;text-transform:uppercase;color:#6b7280;letter-spacing:.8px;margin-bottom:10px'>Payment Execution</div>" +
+        frow("Method", data.payment_method) +
+        frow("Date Paid", data.date_paid) +
+        frow("Amount Paid", data.amount_paid + " " + currency) +
+        frow("Reference", data.payment_ref);
+    }
+
     const html = `
-      <!DOCTYPE html><html><head><meta charset='UTF-8'>
-      <style>
-        body{font-family:Arial,sans-serif;padding:40px;color:#111;line-height:1.6}
-        .header{display:flex;justify-content:space-between;border-bottom:2px solid #e5e7eb;padding-bottom:20px;margin-bottom:20px}
-        .title{font-size:24px;font-weight:900;letter-spacing:4px}
-        .row{display:flex;margin-bottom:8px}
-        .label{width:150px;font-weight:bold;color:#6b7280;text-transform:uppercase;font-size:11px}
-        .val{font-size:13px;font-weight:600}
-        .amount-box{text-align:center;padding:20px;background:#f8fafc;border:1px solid #e2e8f0;margin:20px 0;border-radius:8px}
+      <!DOCTYPE html><html><head><meta charset='UTF-8'><style>
+      *{box-sizing:border-box;margin:0;padding:0}
+      body{font-family:Arial,Helvetica,sans-serif;background:#fff;color:#111;padding:36px 46px;font-size:12px;line-height:1.65}
       </style></head><body>
-        <div class="header">
-          <div><div class="title">GNK</div><div style="font-size:10px;color:#64748b">GROUP OPERATIONS</div></div>
-          <div style="text-align:right">
-            <div style="font-size:16px;font-weight:bold">${data.request_id}</div>
-            <div style="font-size:12px;color:#2563eb;font-weight:bold;margin-top:5px">${data.status || 'Pending'}</div>
-          </div>
-        </div>
-        <div class="row"><div class="label">Requested By</div><div class="val">${data.name}</div></div>
-        <div class="row"><div class="label">Project</div><div class="val">${data.project}</div></div>
-        <div class="row"><div class="label">Department</div><div class="val">${data.department}</div></div>
-        <div class="row"><div class="label">Due Date</div><div class="val">${data.due_date}</div></div>
-        
-        <div class="amount-box">
-          <div style="font-size:28px;font-weight:900">${data.amount} ${data.currency}</div>
-          <div style="font-size:11px;color:#64748b;margin-top:5px">APPROVED AMOUNT</div>
-        </div>
-        
-        <div class="row"><div class="label">Purpose</div><div class="val" style="background:#f1f5f9;padding:10px;flex:1;border-radius:6px">${data.description}</div></div>
-      </body></html>
+      <div style='display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px'>
+        <div><div style='font-size:22px;font-weight:900;letter-spacing:5px'>GNK</div>
+        <div style='font-size:8.5px;color:#9ca3af;letter-spacing:2px;margin-top:1px;text-transform:uppercase'>Group Operations</div></div>
+        <div style='text-align:right'>
+          <div style='font-size:14px;font-weight:700'>${data.request_id}</div>
+          <div style='display:inline-block;margin-top:4px;padding:2px 10px;border:1.5px solid #111;font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.8px'>${data.status}</div>
+          <div style='font-size:9.5px;color:#9ca3af;margin-top:3px'>Submitted: ${submitDate}</div>
+        </div></div>
+      <div style='height:1px;background:#e5e7eb;margin-bottom:12px'></div>
+      <div style='font-size:10.5px;color:#b45309;background:#fffbeb;padding:7px 12px;border-radius:4px;margin-bottom:16px;font-weight:600'>
+        ⚠️ Any payment must be requested at least 48 hours before the due date.</div>
+      ${frow("Requested By", data.name)}
+      ${frow("Email", data.email)}
+      ${frow("Project", data.project)}
+      ${frow("Department", data.department)}
+      ${frow("Due Date", data.due_date)}
+      ${frow("Payment Terms", data.payment_terms)}
+      ${frow("COR", (data.receiving_ids ? "YES — " + data.receiving_ids : "NO"))}
+      <div style='height:1px;background:#e5e7eb;margin:14px 0'></div>
+      <div style='text-align:center;padding:16px 0'>
+        <div style='font-size:34px;font-weight:900;letter-spacing:2px'>${amount.toFixed(2)} ${currency}</div>
+        <div style='font-size:8.5px;color:#9ca3af;text-transform:uppercase;letter-spacing:2px;margin-top:4px'>Requested Amount</div></div>
+      <div style='height:1px;background:#e5e7eb;margin:14px 0'></div>
+      <div style='font-size:9.5px;font-weight:700;text-transform:uppercase;color:#6b7280;letter-spacing:.8px;margin-bottom:7px'>Purpose</div>
+      <div style='font-size:12px;color:#111;background:#f9fafb;padding:12px;min-height:44px;line-height:1.8'>
+        ${data.description || "<span style='color:#9ca3af;font-style:italic'>Not specified</span>"}</div>
+      <div style='height:1px;background:#e5e7eb;margin:14px 0'></div>
+      <div style='font-size:9.5px;font-weight:700;text-transform:uppercase;color:#6b7280;letter-spacing:.8px;margin-bottom:8px'>Approvals</div>
+      ${appr(`L1 — Manager (${data.manager_email})`, data.stamp_l1, data.status === "Pending Approval")}
+      ${data.needs_l2 ? appr(`L2 — ${data.l2_label} (${data.l2_email})`, data.stamp_l2, data.status === "Pending L2 Approval") : ""}
+      ${payBlock}
+      <div style='margin-top:32px;padding-top:8px;border-top:1px solid #e5e7eb;display:flex;justify-content:space-between;font-size:8.5px;color:#d1d5db'>
+        <span>GNK Group Operations System</span><span>${data.request_id}</span><span>Generated: ${genDate}</span></div></body></html>
     `;
 
     const dir = path.join(__dirname, '../uploads/pdfs');
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-
+    
     const fileName = `${data.request_id}.pdf`;
     const filePath = path.join(dir, fileName);
 
-    const browser = await puppeteer.launch({ headless: 'new' });
+    const browser = await puppeteer.launch({ headless: "new", args: ['--no-sandbox'] });
     const page = await browser.newPage();
     await page.setContent(html);
     await page.pdf({ path: filePath, format: 'A4', printBackground: true });
     await browser.close();
 
-    console.log(`✅ PDF Generated: ${fileName}`);
-    return `/pdfs/${fileName}`; 
-
+    return `/pdfs/${fileName}`;
   } catch (error) {
-    console.error('❌ PDF Generation Error:', error);
+    console.error("❌ PDF Generation Error:", error);
     return null;
   }
 }
 
-// دالة توليد الـ PDF لسند الاستلام (Receiving Voucher)
-async function generateReceivingPDF(data) {
+// توليد PDF لـ سندات الاستلام
+async function generateReceivingPDF(recData) {
   try {
-    let itemsHtml = '';
-    let total = 0;
-    
-    if (data.items && data.items.length > 0) {
-      data.items.forEach((it, i) => {
-        const qty = parseFloat(it.qty) || 0;
+    let rows = "", total = 0;
+    if (recData.items && recData.items.length > 0) {
+      recData.items.forEach((it, i) => {
+        const qty   = parseFloat(it.qty)   || 0;
         const price = parseFloat(it.price) || 0;
-        const vat = Math.round(parseFloat(it.vat) || 0);
-        const tax = Math.round(parseFloat(it.tax) || 0);
-        const base = qty * price;
-        const sub = base + (base * vat / 100) - (base * tax / 100);
+        const vat   = Math.round(parseFloat(it.vat) || 0);
+        const tax   = Math.round(parseFloat(it.tax) || 0);
+        const base  = qty * price;
+        const sub   = base + (base * vat / 100) - (base * tax / 100);
         total += sub;
-        
-        itemsHtml += `<tr>
-          <td style="padding:10px;border:1px solid #cbd5e1;text-align:center">${i + 1}</td>
-          <td style="padding:10px;border:1px solid #cbd5e1">${it.desc || it.name || 'Item'}</td>
-          <td style="padding:10px;border:1px solid #cbd5e1;text-align:center">${qty}</td>
-          <td style="padding:10px;border:1px solid #cbd5e1;text-align:center">${it.unit || '-'}</td>
-          <td style="padding:10px;border:1px solid #cbd5e1;text-align:right">${price.toFixed(2)}</td>
-          <td style="padding:10px;border:1px solid #cbd5e1;text-align:center">${vat}%</td>
-          <td style="padding:10px;border:1px solid #cbd5e1;text-align:center">${tax}%</td>
-          <td style="padding:10px;border:1px solid #cbd5e1;text-align:right;font-weight:bold">${sub.toFixed(2)}</td>
-        </tr>`;
+        rows += `<tr><td style='padding:7px;border:1px solid #ddd;text-align:center'>${i + 1}</td>
+          <td style='padding:7px;border:1px solid #ddd'>${escapeHtml(it.name)}</td>
+          <td style='padding:7px;border:1px solid #ddd;text-align:center'>${qty}</td>
+          <td style='padding:7px;border:1px solid #ddd;text-align:center'>${escapeHtml(it.unit || "")}</td>
+          <td style='padding:7px;border:1px solid #ddd;text-align:right'>${price.toFixed(2)}</td>
+          <td style='padding:7px;border:1px solid #ddd;text-align:center'>${vat}%</td>
+          <td style='padding:7px;border:1px solid #ddd;text-align:center'>${tax}%</td>
+          <td style='padding:7px;border:1px solid #ddd;text-align:right'>${sub.toFixed(2)}</td></tr>`;
       });
     }
 
-    const html = `
-      <!DOCTYPE html><html><head><meta charset='UTF-8'>
-      <style>
-        body{font-family:Arial,sans-serif;padding:40px;color:#1e293b;line-height:1.6}
-        .header{text-align:center;border-bottom:3px solid #0f172a;padding-bottom:20px;margin-bottom:30px}
-        table{width:100%;border-collapse:collapse;margin-top:20px;font-size:12px}
-        th{background:#0f172a;color:#fff;padding:12px;text-align:center;text-transform:uppercase}
-        .box{background:#f8fafc;padding:15px;border:1px solid #e2e8f0;border-radius:8px;width:48%}
+    const timestamp = new Date().toLocaleString('en-GB');
+    const html = `<!DOCTYPE html><html><head><meta charset='UTF-8'><style>
+      body{font-family:Arial;padding:40px;color:#2c3e50;max-width:800px;margin:0 auto}
+      h1{text-align:center;border-bottom:3px solid #2c3e50;padding-bottom:15px}
+      .badge{text-align:center;margin:20px 0}.badge span{background:#27ae60;color:#fff;padding:6px 24px;border-radius:20px;font-weight:bold}
+      .row{display:flex;gap:20px;margin:20px 0}.box{background:#f8f9fa;padding:16px;border-radius:8px;flex:1;font-size:13px}.box p{margin:5px 0}
+      table{width:100%;border-collapse:collapse;margin:20px 0}thead tr{background:#2c3e50;color:#fff}th,td{padding:9px;border:1px solid #ddd;font-size:13px}
       </style></head><body>
-        <div class="header">
-          <h2 style="margin:0;letter-spacing:2px">${data.type === 'Services' ? 'SERVICE RECEIPT NOTE' : 'GOODS RECEIPT NOTE'}</h2>
-          <h3 style="color:#2563eb;margin:10px 0 0 0;letter-spacing:1px">${data.rec_number}</h3>
-        </div>
-        
-        <div style="display:flex;justify-content:space-between;margin-bottom:20px;font-size:13px">
-          <div class="box">
-            <p><strong>Supplier:</strong> ${data.supplier}</p>
-            <p><strong>Project:</strong> ${data.project}</p>
-            ${data.paymentRequestId ? `<p><strong>Linked PR:</strong> <span style="color:#2563eb">${data.paymentRequestId}</span></p>` : ''}
-          </div>
-          <div class="box">
-            <p><strong>Received By:</strong> ${data.employeeName}</p>
-            <p><strong>Email:</strong> ${data.email}</p>
-            <p><strong>Date:</strong> ${new Date().toLocaleDateString('en-GB')}</p>
-          </div>
-        </div>
-
-        <table>
-          <thead><tr><th>#</th><th>Item Description</th><th>Qty</th><th>Unit</th><th>Price</th><th>VAT</th><th>Tax</th><th>Subtotal</th></tr></thead>
-          <tbody>${itemsHtml}</tbody>
-        </table>
-        
-        <h2 style="text-align:right;margin-top:20px;color:#16a34a">TOTAL: ${total.toFixed(2)} L.E</h2>
-        
-        <div style="margin-top:40px;font-size:11px;color:#64748b;text-align:center;border-top:1px solid #e2e8f0;padding-top:10px">
-          I confirm the received items match the invoice and quantities. | GNK Operations System
-        </div>
-      </body></html>
-    `;
+      <h1>${recData.type === "Services" ? "Service Receipt Note" : "Goods Receipt Note"}</h1>
+      <div class='badge'><span>${escapeHtml(recData.rec_number)}</span></div>
+      <div class='row'>
+        <div class='box'><p><strong>Date:</strong> ${timestamp}</p>
+          <p><strong>Supplier:</strong> ${escapeHtml(recData.supplier)}</p>
+          ${recData.supplierId ? `<p><strong>Supplier ID:</strong> ${escapeHtml(recData.supplierId)}</p>` : ""}
+          <p><strong>Project:</strong> ${escapeHtml(recData.project)}</p></div>
+        <div class='box'><p><strong>Received By:</strong> ${escapeHtml(recData.employeeName)}</p>
+          <p><strong>Job Title:</strong> ${escapeHtml(recData.jobTitle)}</p>
+          <p><strong>Email:</strong> ${escapeHtml(recData.email)}</p></div></div>
+      ${recData.paymentRequestId ? `<p><strong>Linked Request:</strong> <span style='color:#2563eb;font-weight:bold'>${escapeHtml(recData.paymentRequestId)}</span></p>` : ""}
+      <table><thead><tr><th>#</th><th>Item</th><th>Qty</th><th>Unit</th><th>Price</th><th>VAT%</th><th>Tax%</th><th>Subtotal</th></tr></thead><tbody>
+      ${rows}</tbody></table>
+      <p style='text-align:right;font-size:16px;font-weight:bold'>Total: ${total.toFixed(2)}</p>
+      <div style='margin:20px 0;padding:16px;background:#f8f9fa;border-radius:8px'><strong>Confirmation:</strong><p>I confirm the received items match the invoice and quantities.</p></div>
+      <div style='position:fixed;bottom:30px;right:30px;text-align:right;'>
+        <p style='margin:0;font-size:11px;color:#2c3e50;font-weight:bold'>Received By: ${escapeHtml(recData.employeeName)}</p>
+        <p style='margin:4px 0 0 0;font-size:10px;color:#555'>${timestamp}</p></div>
+      </body></html>`;
 
     const dir = path.join(__dirname, '../uploads/pdfs');
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     
-    const fileName = `${data.rec_number}.pdf`;
+    const fileName = `${recData.rec_number}.pdf`;
     const filePath = path.join(dir, fileName);
 
-    const browser = await puppeteer.launch({ headless: 'new' });
+    const browser = await puppeteer.launch({ headless: "new", args: ['--no-sandbox'] });
     const page = await browser.newPage();
     await page.setContent(html);
     await page.pdf({ path: filePath, format: 'A4', printBackground: true });
     await browser.close();
 
-    console.log(`✅ Receiving PDF Generated: ${fileName}`);
     return `/pdfs/${fileName}`;
   } catch (error) {
-    console.error('❌ Receiving PDF Error:', error);
+    console.error("❌ Receiving PDF Error:", error);
     return null;
   }
 }
