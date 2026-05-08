@@ -7,11 +7,24 @@ export default function Dashboard({ user }) {
   const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
+    // 1. تحميل الداتا لأول مرة (بيظهر شاشة التحميل)
     fetchDashboardData();
+
+    // 2. تحديث تلقائي صامت كل 30 ثانية (30000 مللي ثانية)
+    const interval = setInterval(() => {
+      fetchDashboardData(true); // true معناها ده تحديث صامت
+    }, 30000);
+
+    // 3. تنظيف العداد لما اليوزر يقفل الشاشة أو يروح تاب تاني
+    return () => clearInterval(interval);
   }, [user]);
 
-  const fetchDashboardData = async () => {
-    setLoading(true);
+  // خلينا الدالة تستقبل isSilent عشان نتحكم في الـ Loading
+  const fetchDashboardData = async (isSilent = false) => {
+    if (!isSilent) {
+      setLoading(true);
+    }
+    
     try {
       // بنجيب داتا الموظف اللي فاتح السيستم بس
       const res = await api.get(`/payments/dashboard?email=${user.email}`);
@@ -25,7 +38,10 @@ export default function Dashboard({ user }) {
     } catch (err) {
       console.error('Error fetching dashboard:', err);
     }
-    setLoading(false);
+    
+    if (!isSilent) {
+      setLoading(false);
+    }
   };
 
   // فلترة الجداول
@@ -65,7 +81,7 @@ export default function Dashboard({ user }) {
             onChange={(e) => setSearchQuery(e.target.value)}
             style={{ padding: '8px 14px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '13px', outline: 'none', width: '200px' }}
           />
-          <button onClick={fetchDashboardData} style={{ padding: '8px 12px', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '6px', cursor: 'pointer' }}>🔄</button>
+          <button onClick={() => fetchDashboardData(false)} style={{ padding: '8px 12px', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '6px', cursor: 'pointer' }}>🔄</button>
         </div>
       </div>
 
