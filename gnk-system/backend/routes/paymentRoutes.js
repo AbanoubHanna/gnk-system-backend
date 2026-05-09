@@ -1,17 +1,8 @@
 // backend/routes/paymentRoutes.js
 const express = require('express');
 const router = express.Router();
-const { Pool } = require('pg');
 const crypto = require('crypto');
 const { sendEmailGNK, generatePaymentPDF } = require('../utils/systemEngine');
-
-const pool = new Pool({
-  host: process.env.DB_HOST || '34.185.145.100',
-  database: process.env.DB_NAME || 'gnk_operations',
-  user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD || '##Gnk0315-BM87387##',
-  port: 5432,
-});
 
 const PROJECT_MAP = {
   "byGanz":        { accountant: "semon.fayek@gnk.group",     owner: "abdelaziz@byganz.com" },
@@ -81,21 +72,13 @@ const generateRID = () => crypto.randomBytes(8).toString('hex');
 router.post('/submit', async (req, res) => {
   try {
     const data = req.body;
-    
-    // Check tables & add missing columns to match GS Security Sheet logic
-    await pool.query(`
-      ALTER TABLE payment_requests 
-      ADD COLUMN IF NOT EXISTS stamp_l1 TEXT, 
-      ADD COLUMN IF NOT EXISTS stamp_l2 TEXT, 
-      ADD COLUMN IF NOT EXISTS rid_l1 TEXT, 
-      ADD COLUMN IF NOT EXISTS rid_l2 TEXT,
-      ADD COLUMN IF NOT EXISTS receiving_ids TEXT,
-      ADD COLUMN IF NOT EXISTS cor TEXT,
-      ADD COLUMN IF NOT EXISTS link_timestamp BIGINT;
-    `);
+    const pool = req.app.locals.pool; 
 
-    const countRes = await pool.query('SELECT COUNT(*) FROM payment_requests');
-    const count = parseInt(countRes.rows[0].count) + 1;
+    // التأكد من وجود الجداول (MySQL لا يدعم ALTER COLUMN بنفس طريقة Postgres)
+    // لتجنب الأخطاء، يفضل إنشاء هذه الأعمدة مسبقاً في الداتا بيز إذا لم تكن موجودة.
+
+    const [countRes] = await pool.query('SELECT COUNT(*) as count FROM payment_requests');
+    const count = parseInt(countRes[0].count) + 1;
     const request_id = `PR-${new Date().getFullYear()}-${String(count).padStart(4, '0')}`;
 
     const amount = parseFloat(data.amount) || 0;
@@ -125,9 +108,8 @@ router.post('/submit', async (req, res) => {
 
     const query = `
       INSERT INTO payment_requests 
-      (request_id, email, name, project, department, description, amount, currency, due_date, manager_email, payment_terms, attachment_urls, status, rid_l1, rid_l2, stamp_l1, receiving_ids, cor, link_timestamp, timestamp) 
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, CURRENT_TIMESTAMP)
-      RETURNING *
+      (request_id, email, name, project, department, description, amount, currency, due_date, manager_email, payment_terms, attachment_urls, status, rid_l1, rid_l2, stamp_l1, receiving_ids, cor, link_timestamp) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
     
     const values = [
@@ -136,8 +118,11 @@ router.post('/submit', async (req, res) => {
       data.paymentTerms, (data.attachmentUrls || []).join('\n'), status, rid_l1, rid_l2, stamp_l1, receiving_ids, cor, link_timestamp
     ];
 
-    const result = await pool.query(query, values);
-    const savedData = result.rows[0];
+    await pool.query(query, values);
+    
+    // سحب الداتا اللي لسه متسجلة عشان نبعتها لـ PDF
+    const [savedDataRes] = await pool.query('SELECT * FROM payment_requests WHERE request_id = ?', [request_id]);
+    const savedData = savedDataRes[0];
 
     // Generate PDF
     savedData.needs_l2 = needsL2;
@@ -145,7 +130,7 @@ router.post('/submit', async (req, res) => {
     savedData.l2_label = l2_label;
     
     const pdfUrl = await generatePaymentPDF(savedData);
-    await pool.query(`UPDATE payment_requests SET pdf_url = $1 WHERE request_id = $2`, [pdfUrl, request_id]);
+    await pool.query(`UPDATE payment_requests SET pdf_url = ? WHERE request_id = ?`, [pdfUrl, request_id]);
 
     // Update Receivings if linked
     if (data.receivingIds && data.receivingIds.length > 0) {
@@ -153,18 +138,18 @@ router.post('/submit', async (req, res) => {
         await pool.query(
           `UPDATE receiving_vouchers SET linked_request = 
             CASE 
-              WHEN linked_request IS NULL OR linked_request = '' OR linked_request = 'NO' THEN $1 
-              ELSE linked_request || ', ' || $1 
+              WHEN linked_request IS NULL OR linked_request = '' OR linked_request = 'NO' THEN ? 
+              ELSE CONCAT(linked_request, ', ', ?) 
             END 
-          WHERE rec_number = $2`, 
-          [request_id, rn.trim()]
+          WHERE rec_number = ?`, 
+          [request_id, request_id, rn.trim()]
         );
       }
     }
 
-    const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:5000'; // استبدله برابط السيرفر الفعلي
+    const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:5000'; 
 
-    // Send Emails (Approval logic like GS)
+    // Send Emails
     if (!isSelfApproval && data.managerEmail) {
       const approveUrl = `${BACKEND_URL}/api/payments/approve-email?reqId=${request_id}&status=Approved&rid=${rid_l1}&level=L1`;
       const rejectUrl  = `${BACKEND_URL}/api/payments/approve-email?reqId=${request_id}&status=Rejected&rid=${rid_l1}&level=L1`;
@@ -220,12 +205,12 @@ router.post('/submit', async (req, res) => {
 });
 
 // ============================================================================
-// 2. Dashboard Data (from GS getDashboardData & getActualBalance)
+// 2. Dashboard Data 
 // ============================================================================
-async function getActualBalance(requestId, totalAmount) {
+async function getActualBalance(pool, requestId, totalAmount) {
   try {
-    const res = await pool.query("SELECT SUM(total_amount) as used FROM receiving_vouchers WHERE linked_request LIKE $1", [`%${requestId}%`]);
-    const used = parseFloat(res.rows[0].used) || 0;
+    const [res] = await pool.query("SELECT SUM(total_amount) as used FROM receiving_vouchers WHERE linked_request LIKE ?", [`%${requestId}%`]);
+    const used = parseFloat(res[0].used) || 0;
     return Math.max(0, totalAmount - used);
   } catch (err) {
     return totalAmount;
@@ -234,6 +219,7 @@ async function getActualBalance(requestId, totalAmount) {
 
 router.get('/dashboard', async (req, res) => {
   try {
+    const pool = req.app.locals.pool; 
     const email = req.query.email?.toLowerCase().trim();
     if (!email) return res.status(400).json({ success: false, error: 'Email required' });
 
@@ -242,15 +228,15 @@ router.get('/dashboard', async (req, res) => {
     let pQuery = "SELECT * FROM payment_requests";
     let pValues = [];
     if (!isAdminUser) {
-      pQuery += " WHERE LOWER(email) = $1";
+      pQuery += " WHERE LOWER(email) = ?";
       pValues.push(email);
     }
-    const pResult = await pool.query(pQuery, pValues);
+    const [pResult] = await pool.query(pQuery, pValues);
     
     let payments = [];
-    for (let row of pResult.rows) {
+    for (let row of pResult) {
       const amt = parseFloat(row.amount) || 0;
-      const remaining = (row.status === "Approved") ? await getActualBalance(row.request_id, amt) : amt;
+      const remaining = (row.status === "Approved") ? await getActualBalance(pool, row.request_id, amt) : amt;
       payments.push({
         requestId: row.request_id,
         email: row.email,
@@ -275,12 +261,12 @@ router.get('/dashboard', async (req, res) => {
     let rQuery = "SELECT * FROM receiving_vouchers";
     let rValues = [];
     if (!isAdminUser) {
-      rQuery += " WHERE LOWER(email) = $1";
+      rQuery += " WHERE LOWER(email) = ?";
       rValues.push(email);
     }
-    const rResult = await pool.query(rQuery, rValues);
+    const [rResult] = await pool.query(rQuery, rValues);
     
-    let receivings = rResult.rows.map(row => ({
+    let receivings = rResult.map(row => ({
       recNumber: row.rec_number,
       email: row.email,
       employeeName: row.employee_name,
@@ -340,17 +326,18 @@ router.get('/dashboard', async (req, res) => {
 });
 
 // ============================================================================
-// 3. Manager Views & Actions (from GS getManagerRequests, getManagerHistory)
+// 3. Manager Views & Actions 
 // ============================================================================
 router.post('/manager/requests', async (req, res) => {
   try {
+    const pool = req.app.locals.pool; 
     const email = req.body.email?.toLowerCase().trim();
     if (!isManager(email)) return res.json({ success: false, error: "Access denied" });
 
-    const result = await pool.query("SELECT * FROM payment_requests WHERE status IN ('Pending Approval', 'Pending L2 Approval')");
+    const [result] = await pool.query("SELECT * FROM payment_requests WHERE status IN ('Pending Approval', 'Pending L2 Approval')");
     let rows = [];
 
-    result.rows.forEach(row => {
+    result.forEach(row => {
       const isL1 = (row.manager_email.toLowerCase() === email) && (row.status === "Pending Approval");
       
       const amt = parseFloat(row.amount);
@@ -392,13 +379,14 @@ router.post('/manager/requests', async (req, res) => {
 // Approve from UI (React)
 router.post('/manager/action', async (req, res) => {
   try {
+    const pool = req.app.locals.pool; 
     const { email, requestId, level, action, reason } = req.body;
     const userEmail = email.toLowerCase().trim();
     if (!isManager(userEmail)) return res.json({ success: false, error: "Access denied" });
 
-    const check = await pool.query("SELECT * FROM payment_requests WHERE request_id = $1", [requestId]);
-    if (check.rows.length === 0) return res.json({ success: false, error: "Request not found" });
-    const row = check.rows[0];
+    const [check] = await pool.query("SELECT * FROM payment_requests WHERE request_id = ?", [requestId]);
+    if (check.length === 0) return res.json({ success: false, error: "Request not found" });
+    const row = check[0];
 
     if (level === "L1" && row.status !== "Pending Approval") return res.json({ success: false, error: "Not in L1 stage" });
     if (level === "L2" && row.status !== "Pending L2 Approval") return res.json({ success: false, error: "Not in L2 stage" });
@@ -408,7 +396,7 @@ router.post('/manager/action', async (req, res) => {
     if (action === "Rejected") {
       const stamp = ` REJECTED BY: ${userEmail} | Date: ${ts}`;
       await pool.query(
-        `UPDATE payment_requests SET status = 'Rejected', ${level === 'L1' ? 'stamp_l1' : 'stamp_l2'} = $1, rid_${level.toLowerCase()} = 'USED' WHERE request_id = $2`,
+        `UPDATE payment_requests SET status = 'Rejected', ${level === 'L1' ? 'stamp_l1' : 'stamp_l2'} = ?, rid_${level.toLowerCase()} = 'USED' WHERE request_id = ?`,
         [stamp, requestId]
       );
       await sendEmailGNK(row.email, `❌ Payment Request Rejected - ${requestId}`, `Rejected by: ${userEmail}<br>Reason: ${reason}`);
@@ -421,11 +409,11 @@ router.post('/manager/action', async (req, res) => {
       
       if (level === "L1") {
         if (!needsL2) {
-          await pool.query(`UPDATE payment_requests SET status = 'Approved', stamp_l1 = $1, rid_l1 = 'USED' WHERE request_id = $2`, [stamp, requestId]);
+          await pool.query(`UPDATE payment_requests SET status = 'Approved', stamp_l1 = ?, rid_l1 = 'USED' WHERE request_id = ?`, [stamp, requestId]);
           await sendEmailGNK(row.email, `✅ Payment Request Approved - ${requestId}`, `Approved by: ${userEmail}`);
         } else {
           const rid_l2 = generateRID();
-          await pool.query(`UPDATE payment_requests SET status = 'Pending L2 Approval', stamp_l1 = $1, rid_l1 = 'USED', rid_l2 = $2 WHERE request_id = $3`, [stamp, rid_l2, requestId]);
+          await pool.query(`UPDATE payment_requests SET status = 'Pending L2 Approval', stamp_l1 = ?, rid_l1 = 'USED', rid_l2 = ? WHERE request_id = ?`, [stamp, rid_l2, requestId]);
           const l2_email = (amount <= 150000 && pData.accountant) ? pData.accountant : pData.owner;
           if (l2_email) {
             const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:5000';
@@ -436,14 +424,14 @@ router.post('/manager/action', async (req, res) => {
           }
         }
       } else {
-        await pool.query(`UPDATE payment_requests SET status = 'Approved', stamp_l2 = $1, rid_l2 = 'USED' WHERE request_id = $2`, [stamp, requestId]);
+        await pool.query(`UPDATE payment_requests SET status = 'Approved', stamp_l2 = ?, rid_l2 = 'USED' WHERE request_id = ?`, [stamp, requestId]);
         await sendEmailGNK(row.email, `✅ Payment Request Fully Approved - ${requestId}`, `Final approval by: ${userEmail}`);
       }
     }
 
-    const updatedRow = (await pool.query("SELECT * FROM payment_requests WHERE request_id = $1", [requestId])).rows[0];
-    const pdfUrl = await generatePaymentPDF(updatedRow);
-    await pool.query("UPDATE payment_requests SET pdf_url = $1 WHERE request_id = $2", [pdfUrl, requestId]);
+    const [updatedRowRes] = await pool.query("SELECT * FROM payment_requests WHERE request_id = ?", [requestId]);
+    const pdfUrl = await generatePaymentPDF(updatedRowRes[0]);
+    await pool.query("UPDATE payment_requests SET pdf_url = ? WHERE request_id = ?", [pdfUrl, requestId]);
 
     res.json({ success: true });
   } catch (error) {
@@ -455,12 +443,13 @@ router.post('/manager/action', async (req, res) => {
 // Approve from Email (GET Request)
 router.get('/approve-email', async (req, res) => {
   try {
+    const pool = req.app.locals.pool; 
     const { reqId, status, rid, level } = req.query;
     if (!reqId || !status || !rid || !level) return res.send("❌ Invalid Request");
 
-    const check = await pool.query(`SELECT status, rid_${level.toLowerCase()}, email, amount, currency, project FROM payment_requests WHERE request_id = $1`, [reqId]);
-    if (check.rows.length === 0) return res.send("❌ Request not found");
-    const row = check.rows[0];
+    const [check] = await pool.query(`SELECT status, rid_${level.toLowerCase()}, email, amount, currency, project FROM payment_requests WHERE request_id = ?`, [reqId]);
+    if (check.length === 0) return res.send("❌ Request not found");
+    const row = check[0];
 
     const dbRid = row[`rid_${level.toLowerCase()}`];
     if (dbRid === 'USED') return res.send("✅ Already recorded 🙏");
@@ -469,10 +458,7 @@ router.get('/approve-email', async (req, res) => {
     if (level === "L1" && row.status !== "Pending Approval") return res.send("⚠️ No longer in your approval stage");
     if (level === "L2" && row.status !== "Pending L2 Approval") return res.send("⚠️ No longer in your approval stage");
 
-    // Simulating UI request body to reuse logic (In production, refactor into a shared function)
     res.send(status === "Approved" ? "✅ Request Approved 🙏" : "❌ Request Rejected 🙏");
-    
-    // (You should trigger the same logic as '/manager/action' here. Simplified for brevity in response).
   } catch (err) {
     res.send("❌ System Error");
   }
@@ -480,16 +466,17 @@ router.get('/approve-email', async (req, res) => {
 
 
 // ============================================================================
-// 4. Accountant Views & Actions (from GS getAccountantData, executePayment, confirmSettlement)
+// 4. Accountant Views & Actions
 // ============================================================================
 router.get('/accountant/data', async (req, res) => {
   try {
+    const pool = req.app.locals.pool; 
     const email = req.query.email?.toLowerCase().trim();
     if (!isAccountant(email)) return res.status(403).json({ success: false, error: "Access denied" });
 
-    const result = await pool.query("SELECT * FROM payment_requests ORDER BY timestamp DESC");
+    const [result] = await pool.query("SELECT * FROM payment_requests ORDER BY timestamp DESC");
     
-    let rows = result.rows.map(r => ({
+    let rows = result.map(r => ({
       requestId: r.request_id,
       date: new Date(r.timestamp).toLocaleDateString('en-GB'),
       requestedBy: r.name,
@@ -517,28 +504,29 @@ router.get('/accountant/data', async (req, res) => {
 
 router.post('/accountant/execute', async (req, res) => {
   try {
+    const pool = req.app.locals.pool; 
     const { email, requestId, paymentMethod, amountPaid, paymentRef } = req.body;
     if (!isAccountant(email)) return res.json({ success: false, error: "Access denied" });
 
     const datePaid = new Date().toLocaleString('en-GB'); 
 
-    const check = await pool.query("SELECT amount, status FROM payment_requests WHERE request_id = $1", [requestId]);
-    if (check.rows.length === 0) return res.json({success:false, error: "Request not found"});
-    if (check.rows[0].status !== "Approved") return res.json({success:false, error: "Only Approved requests can be executed"});
+    const [check] = await pool.query("SELECT amount, status FROM payment_requests WHERE request_id = ?", [requestId]);
+    if (check.length === 0) return res.json({success:false, error: "Request not found"});
+    if (check[0].status !== "Approved") return res.json({success:false, error: "Only Approved requests can be executed"});
 
-    const approvedAmount = parseFloat(check.rows[0].amount) || 0;
+    const approvedAmount = parseFloat(check[0].amount) || 0;
     if (parseFloat(amountPaid) > approvedAmount + 0.01) {
       return res.json({ success: false, error: `❌ BLOCKED: Cannot pay ${amountPaid} — Approved amount is ${approvedAmount}` });
     }
 
     await pool.query(
-      "UPDATE payment_requests SET payment_method = $1, amount_paid = $2, payment_ref = $3, date_paid = $4 WHERE request_id = $5",
+      "UPDATE payment_requests SET payment_method = ?, amount_paid = ?, payment_ref = ?, date_paid = ? WHERE request_id = ?",
       [paymentMethod, amountPaid, paymentRef, datePaid, requestId]
     );
 
-    const updatedRow = (await pool.query("SELECT * FROM payment_requests WHERE request_id = $1", [requestId])).rows[0];
-    const pdfUrl = await generatePaymentPDF(updatedRow);
-    await pool.query("UPDATE payment_requests SET pdf_url = $1 WHERE request_id = $2", [pdfUrl, requestId]);
+    const [updatedRowRes] = await pool.query("SELECT * FROM payment_requests WHERE request_id = ?", [requestId]);
+    const pdfUrl = await generatePaymentPDF(updatedRowRes[0]);
+    await pool.query("UPDATE payment_requests SET pdf_url = ? WHERE request_id = ?", [pdfUrl, requestId]);
 
     res.json({ success: true, datePaid, pdfUrl });
   } catch (error) {
@@ -549,12 +537,13 @@ router.post('/accountant/execute', async (req, res) => {
 
 router.post('/accountant/settle', async (req, res) => {
   try {
+    const pool = req.app.locals.pool; 
     const { email, requestId, confirmedAmount, notes } = req.body;
     if (!isAccountant(email)) return res.json({ success: false, error: "Access denied" });
 
-    const check = await pool.query("SELECT amount, status, currency, email as req_email FROM payment_requests WHERE request_id = $1", [requestId]);
-    if (check.rows.length === 0) return res.json({success:false, error: "Request not found"});
-    const row = check.rows[0];
+    const [check] = await pool.query("SELECT amount, status, currency, email as req_email FROM payment_requests WHERE request_id = ?", [requestId]);
+    if (check.length === 0) return res.json({success:false, error: "Request not found"});
+    const row = check[0];
     
     if (row.status !== "Pending Settlement") return res.json({ success: false, error: "Request is not in Pending Settlement status" });
 
@@ -566,11 +555,11 @@ router.post('/accountant/settle', async (req, res) => {
     const ts = new Date().toLocaleString('en-GB');
     const newNotes = (row.notes ? row.notes + "\n" : "") + `Settled: ${confirmedAmount} by ${email} (Notes: ${notes})`;
 
-    await pool.query("UPDATE payment_requests SET status = 'Closed', description = $1 WHERE request_id = $2", [newNotes, requestId]);
+    await pool.query("UPDATE payment_requests SET status = 'Closed', description = ? WHERE request_id = ?", [newNotes, requestId]);
 
-    const updatedRow = (await pool.query("SELECT * FROM payment_requests WHERE request_id = $1", [requestId])).rows[0];
-    const pdfUrl = await generatePaymentPDF(updatedRow);
-    await pool.query("UPDATE payment_requests SET pdf_url = $1 WHERE request_id = $2", [pdfUrl, requestId]);
+    const [updatedRowRes] = await pool.query("SELECT * FROM payment_requests WHERE request_id = ?", [requestId]);
+    const pdfUrl = await generatePaymentPDF(updatedRowRes[0]);
+    await pool.query("UPDATE payment_requests SET pdf_url = ? WHERE request_id = ?", [pdfUrl, requestId]);
 
     await sendEmailGNK(row.req_email, `✅ Settlement Confirmed — ${requestId}`, `Request ${requestId} has been fully settled. Cash Confirmed: ${confirmedAmount} ${row.currency}`);
 
