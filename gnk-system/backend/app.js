@@ -23,10 +23,11 @@ const receivingRoutes = require('./routes/receivingRoutes');
 const uploadRoutes = require('./routes/uploadRoutes');
 const authRoutes = require('./routes/authRoutes');
 
-app.use('/api/payments', paymentRoutes);
-app.use('/api/receivings', receivingRoutes);
-app.use('/api/upload', uploadRoutes);
-app.use('/api/auth', authRoutes);
+// 👇 التعديل السحري هنا: شيلنا كلمة /api من كل المسارات
+app.use('/payments', paymentRoutes);
+app.use('/receivings', receivingRoutes);
+app.use('/upload', uploadRoutes);
+app.use('/auth', authRoutes);
 
 // Database Connection Pool
 const pool = new Pool({
@@ -49,8 +50,9 @@ pool.connect((err, client, release) => {
   if (release) release();
 });
 
+// 👇 وشيلناها من مسار التيست كمان
 // Basic Test Route
-app.get('/api/test', (req, res) => {
+app.get('/test', (req, res) => {
   res.json({ success: true, message: 'GNK Backend is running smoothly! 🚀' });
 });
 
