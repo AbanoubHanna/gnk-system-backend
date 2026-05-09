@@ -1,58 +1,70 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const { Pool } = require('pg');
+const mysql = require('mysql2');
 const path = require('path');
 
 const app = express();
 
-// الحل السحري لمشكلة CORS
-app.use(cors({
-    origin: '*' // هيقبل الطلبات من أي بورت وإحنا شغالين
-}));
+// إعدادات Middleware
+app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-app.use(express.json({ limit: '10mb' }));
-
-// إتاحة فولدر الملفات والـ PDFs للواجهة الأمامية
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-app.use('/pdfs', express.static(path.join(__dirname, 'uploads/pdfs')));
-
-// Routes
-const paymentRoutes = require('./routes/paymentRoutes');
-const receivingRoutes = require('./routes/receivingRoutes');
-const uploadRoutes = require('./routes/uploadRoutes');
-const authRoutes = require('./routes/authRoutes');
-
-app.use('/api/payments', paymentRoutes);
-app.use('/api/receivings', receivingRoutes);
-app.use('/api/upload', uploadRoutes);
-app.use('/api/auth', authRoutes);
-
-// Database Connection Pool
-const pool = new Pool({
-  host: process.env.DB_HOST,
-  database: process.env.DB_NAME,
+// ==========================================
+// 🚀 إعداد اتصال الداتا بيز MySQL (cPanel)
+// ==========================================
+const pool = mysql.createPool({
+  host: process.env.DB_HOST || 'localhost',
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
-  port: 5432,
+  database: process.env.DB_NAME,
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0
 });
 
-pool.connect((err, client, release) => {
-  if (err) {
-    console.error('❌ Error connecting to PostgreSQL:', err.stack);
-  } else {
-    console.log('✅ Successfully connected to Cloud SQL (PostgreSQL)');
-  }
-  if (release) release();
+// تحويل الـ Pool لنظام الـ Promises عشان نستخدم async/await
+const promisePool = pool.promise();
+
+// اختبار الاتصال فور تشغيل السيرفر
+promisePool.query('SELECT 1 + 1 AS solution')
+  .then(() => {
+    console.log('✅ Connected to cPanel MySQL Database successfully!');
+  })
+  .catch(err => {
+    console.error('❌ Database connection error:', err.message);
+  });
+
+// جعل الـ pool متاحاً في كل الـ Routes (مهم جداً)
+app.locals.pool = promisePool;
+
+// ==========================================
+// 🔗 ربط ملفات الـ Routes (المسارات)
+// ==========================================
+
+// 1. مسار المصادقة (الذي عدلناه للإيميل والـ OTP)
+const authRoutes = require('./authRoutes');
+app.use('/api/auth', authRoutes);
+
+// 2. مسارات العمليات (تأكد أن أسماء الملفات صحيحة في الفولدر عندك)
+// لو عندك ملفات تانية للمدفوعات والمقبوضات، شيل علامات الـ // من السطور اللي جاية:
+
+/*
+const paymentRoutes = require('./paymentRoutes');
+const receivingRoutes = require('./receivingRoutes');
+app.use('/api/payments', paymentRoutes);
+app.use('/api/receivings', receivingRoutes);
+*/
+
+// ==========================================
+// 🌐 تشغيل السيرفر
+// ==========================================
+app.get('/', (req, res) => {
+  res.send('GNK Operations Backend is running on cPanel (MySQL Mode)');
 });
 
-// Basic Test Route
-app.get('/api/test', (req, res) => {
-  res.json({ success: true, message: 'GNK Backend is running smoothly! 🚀' });
-});
-
-// Start Server
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`🚀 Server is running on port ${PORT}`);
+  console.log(`🚀 Server is flying on port ${PORT}`);
 });
