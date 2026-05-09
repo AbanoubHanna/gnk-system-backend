@@ -14,7 +14,7 @@ const transporter = nodemailer.createTransport({
   secure: true,
   auth: {
     user: 'abanoubhanna7@gmail.com',
-    pass: 'حط_الباسورد_الـ16_حرف_هنا' // 👈 امسح الكلمة العربي دي وحط الباسورد الجديد بين علامتين التنصيص
+    pass: 'vxvmosolpmwumrrj' 
   },
   tls: {
     rejectUnauthorized: false
