@@ -33,18 +33,18 @@ const PROJECT_MAP = {
   "KiKi's White": { accountant: "treasury@gnk.group" }
 };
 const MANAGER_EMAILS = [
-  "kareem@gnk.group","ganz@byganz.com","marylise.michael@gnk.group",
-  "imad.dargham@gnk.group","marize.george@gnk.group","marian.mounir@gnk.group",
-  "sayed.awad@gnk.group","karim.salama@gnk.group","marylise.milad@gnk.group",
-  "semon.fayek@gnk.group","treasury@gnk.group","islam.khaled@gnk.group",
-  "galal@byganz.com","rady@byganz.com","marwan@byganz.com","engy@byganz.com",
-  "mahmoud.elhakam@gnk.group","rafic.khairallah@mazeejhotels.com",
-  "ahmed.amin@gnk.group"
+  "kaeem@gnk.group","gaz@byganz.com","marlise.michael@gnk.group",
+  "imad.dagham@gnk.group","marize.gorge@gnk.group","maian.mounir@gnk.group",
+  "sayed.ad@gnk.group","karim.sama@gnk.group","malise.milad@gnk.group",
+  "semonyek@gnk.group","treury@gnk.group","iam.khaled@gnk.group",
+  "gal@byganz.com","ady@byganz.com","maan@byganz.com","gy@byganz.com",
+  "mahmoulhakam@gnk.group","rafic.khallah@mazeejhotels.com",
+  "ahmemin@gnk.group"
 ];
 const ADMIN_EDITORS = [
-  "marian.Mounir@gnk.group","sayed.awad@gnk.group",
-  "marylise.milad@gnk.group","karim.salama@gnk.group",
-  "semon.Fayek@gnk.group","treasury@gnk.group"
+  "maan.Mounir@gnk.group","say.awad@gnk.group",
+  "marise.milad@gnk.group","kam.salama@gnk.group",
+  "semoFayek@gnk.group","treasury@gnk.group"
 ];
 
 function isAdmin(email) { return ADMIN_EDITORS.some(a => a.toLowerCase() === email.toLowerCase()); }
@@ -86,11 +86,15 @@ router.post('/send-otp', async (req, res) => {
     });
 
     res.json({ success: true });
-  } catch (err) {
+} catch (err) {
     console.error('OTP Send Error:', err);
-    res.status(500).json({ success: false, error: 'Failed to send email' });
+    // التعديل السحري: هنخلي الباك إند يبعتلك تفاصيل الإيرور الحقيقية على المتصفح
+    res.status(500).json({ 
+        success: false, 
+        error: 'Failed to send email', 
+        real_error: err.message // السطر ده هيجيب الإيرور من جذوره
+    });
   }
-});
 
 // 2. التحقق من الكود وإرسال الصلاحيات
 router.post('/verify-otp', (req, res) => {
