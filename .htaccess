@@ -1,0 +1,5 @@
+<IfModule passenger_module>
+  PassengerEnabled on
+  PassengerAppType node
+  PassengerStartupFile index.js
+</IfModule>
