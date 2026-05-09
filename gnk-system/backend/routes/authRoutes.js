@@ -7,11 +7,11 @@ const crypto = require('crypto');
 const otpCache = new NodeCache({ stdTTL: 300 });
 const sessionCache = new NodeCache({ stdTTL: 30 * 24 * 60 * 60 });
 
-// إعدادات إيميل cPanel الخاصة بيك
+// إعدادات إيميل cPanel (الاتصال الداخلي الآمن)
 const transporter = nodemailer.createTransport({
-  host: 'mail.eshterikly.com',
-  port: 465,
-  secure: true,
+  host: 'localhost', // 👈 السر كله هنا: بنقوله كلم نفسك من جوه
+  port: 587,         // 👈 البورت الداخلي
+  secure: false,     // 👈 مش محتاجين تشفير خارجي لأننا جوه نفس السيرفر
   auth: {
     user: 'system@eshterikly.com',
     pass: 'ZoKE&&@h8Al_PU.8'
