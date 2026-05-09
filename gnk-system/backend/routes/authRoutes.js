@@ -8,14 +8,14 @@ const crypto = require('crypto');
 const otpCache = new NodeCache({ stdTTL: 300 });
 const sessionCache = new NodeCache({ stdTTL: 30 * 24 * 60 * 60 });
 
-// إعدادات جوجل الآمنة 100%
+// إعدادات جوجل المباشرة (عشان نلغي مشكلة الـ env)
 const transporter = nodemailer.createTransport({
   host: 'smtp.gmail.com',
   port: 465,
   secure: true,
   auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
+    user: 'abanoubhanna7@gmail.com', // 👈 حطينا الإيميل بإيدينا
+    pass: 'kcefuvqhwfpupaka'         // 👈 حطينا الباسورد بإيدينا
   },
   tls: {
     rejectUnauthorized: false
