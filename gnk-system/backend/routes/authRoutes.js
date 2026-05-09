@@ -1,4 +1,3 @@
-// backend/routes/authRoutes.js
 const express = require('express');
 const router = express.Router();
 const nodemailer = require('nodemailer');
@@ -9,21 +8,21 @@ const crypto = require('crypto');
 const otpCache = new NodeCache({ stdTTL: 300 });
 const sessionCache = new NodeCache({ stdTTL: 30 * 24 * 60 * 60 });
 
+// إعدادات جوجل الآمنة 100%
 const transporter = nodemailer.createTransport({
   host: 'smtp.gmail.com',
-  port: 465,           // البورت الآمن لجوجل
-  secure: true,        // تشغيل التشفير (SSL/TLS)
+  port: 465,
+  secure: true,
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS
   },
-  // السطرين دول مهمين عشان بعض سيرفرات cPanel بتعمل مشاكل مع شهادات الحماية
   tls: {
     rejectUnauthorized: false
   }
 });
 
-// مصفوفات الصلاحيات (نفس اللي في جوجل سكريبت)
+// مصفوفات الصلاحيات
 const PROJECT_MAP = {
   "byGanz": { accountant: "semon.fayek@gnk.group" },
   "Head Office": { accountant: "karim.salama@gnk.group" },
@@ -33,18 +32,18 @@ const PROJECT_MAP = {
   "KiKi's White": { accountant: "treasury@gnk.group" }
 };
 const MANAGER_EMAILS = [
-  "kaeem@gnk.group","gaz@byganz.com","marlise.michael@gnk.group",
-  "imad.dagham@gnk.group","marize.gorge@gnk.group","maian.mounir@gnk.group",
-  "sayed.ad@gnk.group","karim.sama@gnk.group","malise.milad@gnk.group",
-  "semonyek@gnk.group","treury@gnk.group","iam.khaled@gnk.group",
-  "gal@byganz.com","ady@byganz.com","maan@byganz.com","gy@byganz.com",
-  "mahmoulhakam@gnk.group","rafic.khallah@mazeejhotels.com",
-  "ahmemin@gnk.group"
+  "kareem@gnk.group","ganz@byganz.com","marylise.michael@gnk.group",
+  "imad.dargham@gnk.group","marize.george@gnk.group","marian.mounir@gnk.group",
+  "sayed.awad@gnk.group","karim.salama@gnk.group","marylise.milad@gnk.group",
+  "semon.fayek@gnk.group","treasury@gnk.group","islam.khaled@gnk.group",
+  "galal@byganz.com","rady@byganz.com","marwan@byganz.com","engy@byganz.com",
+  "mahmoud.elhakam@gnk.group","rafic.khairallah@mazeejhotels.com",
+  "ahmed.amin@gnk.group"
 ];
 const ADMIN_EDITORS = [
-  "maan.Mounir@gnk.group","say.awad@gnk.group",
-  "marise.milad@gnk.group","kam.salama@gnk.group",
-  "semoFayek@gnk.group","treasury@gnk.group"
+  "marian.Mounir@gnk.group","sayed.awad@gnk.group",
+  "marylise.milad@gnk.group","karim.salama@gnk.group",
+  "semon.Fayek@gnk.group","treasury@gnk.group"
 ];
 
 function isAdmin(email) { return ADMIN_EDITORS.some(a => a.toLowerCase() === email.toLowerCase()); }
@@ -86,15 +85,11 @@ router.post('/send-otp', async (req, res) => {
     });
 
     res.json({ success: true });
-} catch (err) {
+  } catch (err) {
     console.error('OTP Send Error:', err);
-    // التعديل السحري: هنخلي الباك إند يبعتلك تفاصيل الإيرور الحقيقية على المتصفح
-    res.status(500).json({ 
-        success: false, 
-        error: 'Failed to send email', 
-        real_error: err.message // السطر ده هيجيب الإيرور من جذوره
-    });
+    res.status(500).json({ success: false, error: 'Failed to send email', real_error: err.message });
   }
+});
 
 // 2. التحقق من الكود وإرسال الصلاحيات
 router.post('/verify-otp', (req, res) => {
@@ -112,7 +107,6 @@ router.post('/verify-otp', (req, res) => {
     return res.status(400).json({ success: false, error: `Wrong code. ${4 - attempts} attempts left.` });
   }
 
-  // نجاح الدخول
   otpCache.del(`otp_${email}`);
   otpCache.del(`attempts_${email}`);
 
