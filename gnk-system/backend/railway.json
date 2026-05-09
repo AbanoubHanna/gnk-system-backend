@@ -4,9 +4,9 @@
     "builder": "RAILPACK"
   },
   "deploy": {
-    "startCommand": "node index.js",
     "runtime": "V2",
     "numReplicas": 1,
+    "startCommand": "node index.js",
     "sleepApplication": false,
     "useLegacyStacker": false,
     "ipv6EgressEnabled": false,
