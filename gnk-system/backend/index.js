@@ -35,6 +35,9 @@ const pool = new Pool({
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   port: 5432,
+  ssl: {
+    rejectUnauthorized: false // السطر ده هو السحر اللي هيخلي جوجل تقبل الاتصال
+  }
 });
 
 pool.connect((err, client, release) => {
