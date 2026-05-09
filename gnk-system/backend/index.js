@@ -11,6 +11,10 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// جعل مجلد المرفقات والـ PDF متاحاً للفرونت إند
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/pdfs', express.static(path.join(__dirname, 'uploads/pdfs')));
+
 // ==========================================
 // 🚀 إعداد اتصال الداتا بيز MySQL (cPanel)
 // ==========================================
@@ -24,44 +28,32 @@ const pool = mysql.createPool({
   queueLimit: 0
 });
 
-// تحويل الـ Pool لنظام الـ Promises عشان نستخدم async/await
+// تحويل الـ Pool لنظام الـ Promises
 const promisePool = pool.promise();
 
-// اختبار الاتصال فور تشغيل السيرفر
 promisePool.query('SELECT 1 + 1 AS solution')
-  .then(() => {
-    console.log('✅ Connected to cPanel MySQL Database successfully!');
-  })
-  .catch(err => {
-    console.error('❌ Database connection error:', err.message);
-  });
+  .then(() => console.log('✅ Connected to cPanel MySQL Database successfully!'))
+  .catch(err => console.error('❌ Database connection error:', err.message));
 
-// جعل الـ pool متاحاً في كل الـ Routes (مهم جداً)
 app.locals.pool = promisePool;
 
 // ==========================================
 // 🔗 ربط ملفات الـ Routes (المسارات)
 // ==========================================
-
-// 1. مسار المصادقة (الذي عدلناه للإيميل والـ OTP)
 const authRoutes = require('./authRoutes');
-app.use('/api/auth', authRoutes);
-
-// 2. مسارات العمليات (تأكد أن أسماء الملفات صحيحة في الفولدر عندك)
-// لو عندك ملفات تانية للمدفوعات والمقبوضات، شيل علامات الـ // من السطور اللي جاية:
-
-/*
 const paymentRoutes = require('./paymentRoutes');
 const receivingRoutes = require('./receivingRoutes');
+const uploadRoutes = require('./uploadRoutes');
+
+// تفعيل كل المسارات (الآن الباك إند سيرد على كل طلبات الفرونت إند)
+app.use('/api/auth', authRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/receivings', receivingRoutes);
-*/
+app.use('/api/upload', uploadRoutes);
 
-// ==========================================
-// 🌐 تشغيل السيرفر
-// ==========================================
-app.get('/', (req, res) => {
-  res.send('GNK Operations Backend is running on cPanel (MySQL Mode)');
+// مسار تجريبي
+app.get('/api', (req, res) => {
+  res.send('GNK Operations API is Running! 🚀');
 });
 
 const PORT = process.env.PORT || 3000;
