@@ -10,10 +10,16 @@ const otpCache = new NodeCache({ stdTTL: 300 });
 const sessionCache = new NodeCache({ stdTTL: 30 * 24 * 60 * 60 });
 
 const transporter = nodemailer.createTransport({
-  service: 'gmail', 
+  host: 'smtp.gmail.com',
+  port: 465,           // البورت الآمن لجوجل
+  secure: true,        // تشغيل التشفير (SSL/TLS)
   auth: {
-    user: process.env.EMAIL_USER || 'your-email@gnk.group',
-    pass: process.env.EMAIL_PASS || 'your-app-password'
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS
+  },
+  // السطرين دول مهمين عشان بعض سيرفرات cPanel بتعمل مشاكل مع شهادات الحماية
+  tls: {
+    rejectUnauthorized: false
   }
 });
 
